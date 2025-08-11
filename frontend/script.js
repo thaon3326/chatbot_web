@@ -3,9 +3,52 @@ class ChatbotApp {
         this.currentSessionId = null;
         this.currentRatingConversationId = null;
         this.apiBase = '/api';
+        this.authToken = null;
+        this.currentUser = null;
         
+        this.checkAuthentication();
+    }
+
+    async checkAuthentication() {
+        const token = localStorage.getItem('access_token');
+        const userInfo = localStorage.getItem('user_info');
+
+        if (!token || !userInfo) {
+            this.redirectToAuth();
+            return;
+        }
+
+        try {
+            // Verify token
+            const response = await fetch('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                this.authToken = token;
+                this.currentUser = JSON.parse(userInfo);
+                this.initializeApp();
+            } else {
+                this.redirectToAuth();
+            }
+        } catch (error) {
+            console.error('Auth check error:', error);
+            this.redirectToAuth();
+        }
+    }
+
+    redirectToAuth() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_info');
+        window.location.href = '/auth';
+    }
+
+    initializeApp() {
         this.initializeElements();
         this.bindEvents();
+        this.updateUserInfo();
         this.initializeSession();
         this.checkServerStatus();
     }
@@ -27,6 +70,15 @@ class ChatbotApp {
         this.submitRating = document.getElementById('submitRating');
         this.cancelRating = document.getElementById('cancelRating');
         this.feedbackText = document.getElementById('feedbackText');
+        this.logoutBtn = document.getElementById('logoutBtn');
+        this.userName = document.getElementById('userName');
+    }
+
+    updateUserInfo() {
+        if (this.currentUser) {
+            const displayName = this.currentUser.full_name || this.currentUser.username;
+            this.userName.textContent = `Xin chào, ${displayName}!`;
+        }
     }
 
     bindEvents() {
@@ -41,6 +93,7 @@ class ChatbotApp {
         this.newChatBtn.addEventListener('click', () => this.createNewSession());
         this.historyBtn.addEventListener('click', () => this.toggleSidebar());
         this.closeSidebar.addEventListener('click', () => this.toggleSidebar());
+        this.logoutBtn.addEventListener('click', () => this.logout());
         
         // Modal events
         this.closeRatingModal.addEventListener('click', () => this.closeRatingModalFunc());
@@ -61,7 +114,9 @@ class ChatbotApp {
 
     async initializeSession() {
         try {
-            const response = await fetch(`${this.apiBase}/new-session`);
+            const response = await fetch(`${this.apiBase}/new-session`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
             this.currentSessionId = data.session_id;
         } catch (error) {
@@ -88,6 +143,19 @@ class ChatbotApp {
         }
     }
 
+    logout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_info');
+        window.location.href = '/auth';
+    }
+
+    getAuthHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.authToken}`
+        };
+    }
+
     async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message) return;
@@ -105,9 +173,7 @@ class ChatbotApp {
         try {
             const response = await fetch(`${this.apiBase}/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify({
                     message: message,
                     session_id: this.currentSessionId
@@ -118,7 +184,7 @@ class ChatbotApp {
             
             if (response.ok) {
                 this.hideTypingIndicator();
-                this.addMessage(data.response, 'bot', true);
+                this.addMessage(data.response, 'bot', true, data.conversation_id);
             } else {
                 this.hideTypingIndicator();
                 this.showError(data.detail || 'Có lỗi xảy ra');
@@ -132,9 +198,14 @@ class ChatbotApp {
         }
     }
 
-    addMessage(content, type, showActions = false) {
+    addMessage(content, type, showActions = false, conversationId = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
+        
+        // Lưu conversation_id vào data attribute
+        if (conversationId) {
+            messageDiv.setAttribute('data-conversation-id', conversationId);
+        }
 
         const avatar = document.createElement('div');
         avatar.className = `message-avatar ${type}-avatar`;
@@ -207,7 +278,9 @@ class ChatbotApp {
     async createNewSession() {
         try {
             this.showLoading();
-            const response = await fetch(`${this.apiBase}/new-session`);
+            const response = await fetch(`${this.apiBase}/new-session`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
             
             this.currentSessionId = data.session_id;
@@ -242,7 +315,9 @@ class ChatbotApp {
 
     async loadSessions() {
         try {
-            const response = await fetch(`${this.apiBase}/sessions`);
+            const response = await fetch(`${this.apiBase}/sessions`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
             
             this.sessionList.innerHTML = '';
@@ -262,7 +337,9 @@ class ChatbotApp {
 
     async addSessionToList(sessionId) {
         try {
-            const response = await fetch(`${this.apiBase}/history/${sessionId}`);
+            const response = await fetch(`${this.apiBase}/history/${sessionId}`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
             
             if (data.history.length > 0) {
@@ -287,7 +364,9 @@ class ChatbotApp {
     async loadSession(sessionId) {
         try {
             this.showLoading();
-            const response = await fetch(`${this.apiBase}/history/${sessionId}`);
+            const response = await fetch(`${this.apiBase}/history/${sessionId}`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
             
             this.currentSessionId = sessionId;
@@ -295,7 +374,7 @@ class ChatbotApp {
             
             for (const conv of data.history) {
                 this.addMessage(conv.user_message, 'user');
-                this.addMessage(conv.bot_response, 'bot', true);
+                this.addMessage(conv.bot_response, 'bot', true, conv.id);
             }
             
             this.toggleSidebar();
@@ -307,13 +386,16 @@ class ChatbotApp {
     }
 
     openRatingModal(button) {
-        // Tìm conversation ID từ DOM hoặc lưu trữ
+        // Lấy conversation ID từ data attribute
         const messageElement = button.closest('.message');
-        const messages = Array.from(this.chatMessages.querySelectorAll('.message.bot'));
-        const messageIndex = messages.indexOf(messageElement);
+        const conversationId = messageElement.getAttribute('data-conversation-id');
         
-        // Giả sử conversation ID tương ứng với thứ tự tin nhắn
-        this.currentRatingConversationId = messageIndex + 1;
+        if (!conversationId) {
+            this.showError('Không thể đánh giá tin nhắn này');
+            return;
+        }
+
+        this.currentRatingConversationId = parseInt(conversationId);
         this.ratingModal.classList.add('show');
         this.resetRating();
     }
@@ -367,9 +449,7 @@ class ChatbotApp {
         try {
             const response = await fetch(`${this.apiBase}/rate`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify({
                     conversation_id: this.currentRatingConversationId,
                     rating: this.selectedRating,

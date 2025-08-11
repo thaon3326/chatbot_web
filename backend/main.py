@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from routers import chat
+from routers import chat, auth
 from database import create_tables
 import os
 
@@ -25,6 +25,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, tags=["authentication"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 
 # Serve static files
@@ -41,6 +42,16 @@ async def read_root():
     if os.path.exists(frontend_file):
         return FileResponse(frontend_file)
     return {"message": "Vietnamese AI Chatbot API", "docs": "/docs"}
+
+@app.get("/auth")
+async def auth_page():
+    """
+    Serve trang đăng nhập
+    """
+    auth_file = os.path.join(frontend_path, "auth.html")
+    if os.path.exists(auth_file):
+        return FileResponse(auth_file)
+    return {"message": "Auth page not found"}
 
 @app.get("/health")
 async def health():
