@@ -7,12 +7,13 @@ class ConversationService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_conversation(self, session_id: str, user_message: str, bot_response: str) -> Conversation:
+    def create_conversation(self, session_id: str, user_id: int, user_message: str, bot_response: str) -> Conversation:
         """
         Tạo một cuộc hội thoại mới
         """
         conversation = Conversation(
             session_id=session_id,
+            user_id=user_id,
             user_message=user_message,
             bot_response=bot_response
         )
@@ -21,13 +22,18 @@ class ConversationService:
         self.db.refresh(conversation)
         return conversation
     
-    def get_conversation_history(self, session_id: str) -> List[Dict]:
+    def get_conversation_history(self, session_id: str, user_id: int = None) -> List[Dict]:
         """
-        Lấy lịch sử cuộc hội thoại theo session_id
+        Lấy lịch sử cuộc hội thoại theo session_id và user_id
         """
-        conversations = self.db.query(Conversation).filter(
+        query = self.db.query(Conversation).filter(
             Conversation.session_id == session_id
-        ).order_by(Conversation.timestamp).all()
+        )
+        
+        if user_id:
+            query = query.filter(Conversation.user_id == user_id)
+            
+        conversations = query.order_by(Conversation.timestamp).all()
         
         return [
             {
@@ -41,20 +47,38 @@ class ConversationService:
             for conv in conversations
         ]
     
-    def get_all_sessions(self) -> List[str]:
+    def get_all_sessions(self, user_id: int = None) -> List[Dict]:
         """
-        Lấy danh sách tất cả session_id
+        Lấy danh sách tất cả session_id của user
         """
-        sessions = self.db.query(Conversation.session_id).distinct().all()
-        return [session[0] for session in sessions]
+        query = self.db.query(Conversation.session_id, Conversation.user_message, Conversation.timestamp).distinct(Conversation.session_id)
+        
+        if user_id:
+            query = query.filter(Conversation.user_id == user_id)
+            
+        sessions = query.order_by(Conversation.timestamp.desc()).all()
+        
+        return [
+            {
+                "session_id": session[0],
+                "first_message": session[1][:50] + "..." if len(session[1]) > 50 else session[1],
+                "timestamp": session[2]
+            }
+            for session in sessions
+        ]
     
-    def rate_conversation(self, conversation_id: int, rating: float, feedback: str = None) -> bool:
+    def rate_conversation(self, conversation_id: int, rating: float, feedback: str = None, user_id: int = None) -> bool:
         """
         Đánh giá một cuộc hội thoại
         """
-        conversation = self.db.query(Conversation).filter(
+        query = self.db.query(Conversation).filter(
             Conversation.id == conversation_id
-        ).first()
+        )
+        
+        if user_id:
+            query = query.filter(Conversation.user_id == user_id)
+            
+        conversation = query.first()
         
         if conversation:
             conversation.rating = rating
@@ -77,14 +101,19 @@ class ConversationService:
         """
         return str(uuid.uuid4())
     
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str, user_id: int = None) -> bool:
         """
         Xóa toàn bộ cuộc hội thoại của một session
         """
         try:
-            self.db.query(Conversation).filter(
+            query = self.db.query(Conversation).filter(
                 Conversation.session_id == session_id
-            ).delete()
+            )
+            
+            if user_id:
+                query = query.filter(Conversation.user_id == user_id)
+                
+            query.delete()
             self.db.commit()
             return True
         except:

@@ -5,7 +5,7 @@ from typing import List, Dict
 class OllamaService:
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
-        self.model = "llama3.2:3b"  # Model mặc định, có thể thay đổi
+        self.model = "llama3.2:1b"  # Model mặc định, có thể thay đổi
     
     async def generate_response(self, message: str, conversation_history: List[Dict] = None) -> str:
         """
