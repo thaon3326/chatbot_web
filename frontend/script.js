@@ -51,6 +51,7 @@ class ChatbotApp {
         this.updateUserInfo();
         this.initializeSession();
         this.checkServerStatus();
+        this.loadSessions(); // <-- Thêm dòng này để luôn load lịch sử khi vào trang
     }
 
     initializeElements() {
@@ -91,8 +92,8 @@ class ChatbotApp {
         });
         
         this.newChatBtn.addEventListener('click', () => this.createNewSession());
-        this.historyBtn.addEventListener('click', () => this.toggleSidebar());
-        this.closeSidebar.addEventListener('click', () => this.toggleSidebar());
+        // this.historyBtn.addEventListener('click', () => this.toggleSidebar());
+        // this.closeSidebar.addEventListener('click', () => this.toggleSidebar());
         this.logoutBtn.addEventListener('click', () => this.logout());
         
         // Modal events
@@ -313,28 +314,68 @@ class ChatbotApp {
         }
     }
 
+    // async loadSessions() {
+    //     try {
+    //         const response = await fetch(`${this.apiBase}/sessions`, {
+    //             headers: this.getAuthHeaders()
+    //         });
+    //         const data = await response.json();
+            
+    //         this.sessionList.innerHTML = '';
+            
+    //         if (data.sessions.length === 0) {
+    //             this.sessionList.innerHTML = '<p style="text-align: center; color: #a0aec0; padding: 2rem;">Chưa có cuộc hội thoại nào</p>';
+    //             return;
+    //         }
+
+    //         for (const sessionId of data.sessions) {
+    //             await this.addSessionToList(sessionId);
+    //         }
+    //     } catch (error) {
+    //         this.showError('Không thể tải lịch sử cuộc hội thoại');
+    //     }
+    // }
+
+    // ...trong class ChatbotApp...
+
     async loadSessions() {
         try {
             const response = await fetch(`${this.apiBase}/sessions`, {
                 headers: this.getAuthHeaders()
             });
             const data = await response.json();
-            
+
             this.sessionList.innerHTML = '';
-            
-            if (data.sessions.length === 0) {
+
+            if (!data.sessions || data.sessions.length === 0) {
                 this.sessionList.innerHTML = '<p style="text-align: center; color: #a0aec0; padding: 2rem;">Chưa có cuộc hội thoại nào</p>';
                 return;
             }
 
-            for (const sessionId of data.sessions) {
-                await this.addSessionToList(sessionId);
+            // Lọc trùng session_id, chỉ giữ lại 1 session cho mỗi id
+            const uniqueSessionsMap = {};
+            for (const session of data.sessions) {
+                if (!uniqueSessionsMap[session.session_id]) {
+                    uniqueSessionsMap[session.session_id] = session;
+                }
+            }
+            const uniqueSessions = Object.values(uniqueSessionsMap);
+
+            for (const session of uniqueSessions) {
+                const sessionDiv = document.createElement('div');
+                sessionDiv.className = `session-item${session.session_id === this.currentSessionId ? ' active' : ''}`;
+                sessionDiv.innerHTML = `
+                    <!-- <div class="session-id">Session: ${session.session_id.substring(0, 8)}...</div> -->
+                    <div class="fw-bold session-preview">${session.first_message || ''}</div>
+                    <div class="session-time">${session.created_at ? this.formatTimestamp(session.created_at) : ''}</div>
+                `;
+                sessionDiv.addEventListener('click', () => this.loadSession(session.session_id));
+                this.sessionList.appendChild(sessionDiv);
             }
         } catch (error) {
             this.showError('Không thể tải lịch sử cuộc hội thoại');
         }
     }
-
     async addSessionToList(sessionId) {
         try {
             const response = await fetch(`${this.apiBase}/history/${sessionId}`, {
@@ -377,7 +418,7 @@ class ChatbotApp {
                 this.addMessage(conv.bot_response, 'bot', true, conv.id);
             }
             
-            this.toggleSidebar();
+            // this.toggleSidebar();
             this.hideLoading();
         } catch (error) {
             this.hideLoading();
@@ -534,3 +575,44 @@ setInterval(() => {
         window.chatApp.saveDraft();
     }
 }, 2000);
+
+
+// ...existing code...
+
+async function fetchChatSessions() {
+    try {
+        const res = await fetch('/api/sessions', { credentials: 'include' });
+        if (!res.ok) throw new Error('Không lấy được lịch sử');
+        const data = await res.json();
+        renderChatSessions(data.sessions);
+    } catch (err) {
+        document.getElementById('sessionList').innerHTML = '<p>Không thể tải lịch sử.</p>';
+    }
+}
+
+function renderChatSessions(sessions) {
+    const sessionList = document.getElementById('sessionList');
+    if (!sessions || sessions.length === 0) {
+        sessionList.innerHTML = '<p>Chưa có cuộc hội thoại nào.</p>';
+        return;
+    }
+    sessionList.innerHTML = sessions.map(session => `
+        <div class="session-item" data-session-id="${session.session_id}">
+            <div class="session-title">${session.title || 'Cuộc hội thoại ' + session.session_id}</div>
+            <div class="session-time">${new Date(session.created_at).toLocaleString('vi-VN')}</div>
+        </div>
+    `).join('');
+}
+
+// Khi nhấn nút "Lịch sử" hoặc mở sidebar
+// document.getElementById('historyBtn').addEventListener('click', () => {
+//     document.getElementById('sidebar').style.display = 'block';
+//     fetchChatSessions();
+// });
+
+// Đóng sidebar
+// document.getElementById('closeSidebar').addEventListener('click', () => {
+//     document.getElementById('sidebar').style.display = 'none';
+// });
+
+// ...existing code...

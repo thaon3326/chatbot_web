@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from routers import chat, auth
 from database import create_tables
+from services import conversation_service
 import os
 
 # Tạo bảng database
